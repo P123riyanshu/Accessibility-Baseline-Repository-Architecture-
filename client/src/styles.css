@@ -1,0 +1,38 @@
+:root {
+  color: #172b4d;
+  background: #fff;
+  font-family: Arial, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+}
+
+.page {
+  margin: 0 auto;
+  max-width: 48rem;
+  padding: 2rem 1rem;
+}
+
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: 1rem;
+  transform: translateY(-200%);
+  background: #fff;
+  color: #123b66;
+  padding: 0.75rem 1rem;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+  outline: 3px solid #123b66;
+  outline-offset: 3px;
+}
+
+:focus-visible {
+  outline: 3px solid #123b66;
+  outline-offset: 3px;
+}
