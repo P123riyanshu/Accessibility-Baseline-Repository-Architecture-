@@ -1,8 +1,10 @@
 # Accessible public-service platform
 
-A small TypeScript monorepo foundation for an accessible public-service web
-application. The current vertical slice is a health check that proves the client
-can reach the server; the first product slice is a searchable service directory.
+A TypeScript monorepo foundation for an accessible public-service web
+application. The client includes a responsive CivicDesk operations dashboard
+with searchable service requests, request details and creation dialogs, reports,
+and workspace settings. Dashboard records are illustrative local data; the
+server currently exposes a health check to verify the client connection.
 
 ## Architecture
 
@@ -23,8 +25,8 @@ screenshots/             Audit evidence captured from California DMV
 - **Tests:** keeps API and end-to-end coverage at the boundaries where user
   workflows cross packages.
 
-The server exposes `GET /api/health`. The client displays its connection state
-to verify local setup and the Vite proxy.
+The server exposes `GET /api/health`. The dashboard displays the API connection
+state to verify local setup and the Vite proxy.
 
 ## Local setup
 
