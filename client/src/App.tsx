@@ -1,9 +1,48 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import { fetchServiceTasks } from "./api";
+import type { ServiceTask } from "./api";
 
-type View = "overview" | "services" | "reports" | "settings";
+type View = "overview" | "services" | "tasks" | "reports" | "settings";
 type RequestStatus = "In review" | "Needs attention" | "Completed";
 type ApiStatus = "checking" | "available" | "unavailable";
+type TaskCategory = "all" | "open" | "completed";
+type TaskSort = "title" | "assignee" | "status";
+type TaskPreferences = { query: string; category: TaskCategory; sort: TaskSort };
+type DemoUser = { name: string; email: string; role: string };
+
+const taskPreferencesKey = "civicdesk.task-preferences";
+const requestStorageKey = "civicdesk.service-requests";
+const sessionStorageKey = "civicdesk.demo-session";
+const defaultTaskPreferences: TaskPreferences = { query: "", category: "all", sort: "title" };
+const demoUser: DemoUser = { name: "Jordan Davis", email: "jordan.davis@civicdesk.gov", role: "Program manager" };
+
+function isTaskSort(value: string): value is TaskSort {
+  return value === "title" || value === "assignee" || value === "status";
+}
+
+function readTaskPreferences(): { preferences: TaskPreferences; error: string } {
+  try {
+    const stored = localStorage.getItem(taskPreferencesKey);
+    if (!stored) return { preferences: defaultTaskPreferences, error: "" };
+    const value: unknown = JSON.parse(stored);
+    if (typeof value !== "object" || value === null) {
+      return { preferences: defaultTaskPreferences, error: "Saved task preferences were invalid and have been reset." };
+    }
+    const data = value as Record<string, unknown>;
+    return {
+      preferences: {
+        query: typeof data.query === "string" ? data.query : "",
+        category: data.category === "open" || data.category === "completed" ? data.category : "all",
+        sort: data.sort === "assignee" || data.sort === "status" ? data.sort : "title",
+      },
+      error: "",
+    };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Browser storage is unavailable.";
+    return { preferences: defaultTaskPreferences, error: `Task preferences could not be loaded: ${message}` };
+  }
+}
 
 type ServiceRequest = {
   id: string;
@@ -11,19 +50,70 @@ type ServiceRequest = {
   service: string;
   submitted: string;
   status: RequestStatus;
+  notes: string;
 };
 
 const initialRequests: ServiceRequest[] = [
-  { id: "SR-2048", resident: "Amara Okafor", service: "Housing assistance", submitted: "Oct 24, 2024", status: "In review" },
-  { id: "SR-2047", resident: "Noah Williams", service: "Business license", submitted: "Oct 24, 2024", status: "Needs attention" },
-  { id: "SR-2046", resident: "Sofia Chen", service: "Food support", submitted: "Oct 23, 2024", status: "Completed" },
-  { id: "SR-2045", resident: "Ethan Patel", service: "Housing assistance", submitted: "Oct 23, 2024", status: "In review" },
-  { id: "SR-2044", resident: "Isabella Garcia", service: "Child care subsidy", submitted: "Oct 22, 2024", status: "Completed" },
+  { id: "SR-2048", resident: "Amara Okafor", service: "Housing assistance", submitted: "Oct 24, 2024", status: "In review", notes: "" },
+  { id: "SR-2047", resident: "Noah Williams", service: "Business license", submitted: "Oct 24, 2024", status: "Needs attention", notes: "" },
+  { id: "SR-2046", resident: "Sofia Chen", service: "Food support", submitted: "Oct 23, 2024", status: "Completed", notes: "" },
+  { id: "SR-2045", resident: "Ethan Patel", service: "Housing assistance", submitted: "Oct 23, 2024", status: "In review", notes: "" },
+  { id: "SR-2044", resident: "Isabella Garcia", service: "Child care subsidy", submitted: "Oct 22, 2024", status: "Completed", notes: "" },
 ];
+
+function isRequestStatus(value: unknown): value is RequestStatus {
+  return value === "In review" || value === "Needs attention" || value === "Completed";
+}
+
+function isServiceRequest(value: unknown): value is ServiceRequest {
+  if (typeof value !== "object" || value === null) return false;
+  return "id" in value && typeof value.id === "string"
+    && "resident" in value && typeof value.resident === "string"
+    && "service" in value && typeof value.service === "string"
+    && "submitted" in value && typeof value.submitted === "string"
+    && "status" in value && isRequestStatus(value.status)
+    && "notes" in value && typeof value.notes === "string";
+}
+
+function readRequests(): { requests: ServiceRequest[]; error: string } {
+  try {
+    const stored = localStorage.getItem(requestStorageKey);
+    if (!stored) return { requests: initialRequests, error: "" };
+    const value: unknown = JSON.parse(stored);
+    if (!Array.isArray(value) || !value.every(isServiceRequest)) {
+      return { requests: initialRequests, error: "Saved requests were invalid. The sample requests have been restored." };
+    }
+    return { requests: value, error: "" };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Browser storage is unavailable.";
+    return { requests: initialRequests, error: `Saved requests could not be loaded: ${message}` };
+  }
+}
+
+function isDemoUser(value: unknown): value is DemoUser {
+  if (typeof value !== "object" || value === null) return false;
+  return "name" in value && typeof value.name === "string"
+    && "email" in value && typeof value.email === "string"
+    && "role" in value && typeof value.role === "string";
+}
+
+function readDemoSession(): { user: DemoUser | null; error: string } {
+  try {
+    const stored = localStorage.getItem(sessionStorageKey);
+    if (!stored) return { user: null, error: "" };
+    const value: unknown = JSON.parse(stored);
+    if (isDemoUser(value)) return { user: value, error: "" };
+    return { user: null, error: "The saved demo session was invalid. Please sign in again." };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Browser storage is unavailable.";
+    return { user: null, error: `The saved demo session could not be loaded: ${message}` };
+  }
+}
 
 const navigation: { id: View; label: string; icon: string }[] = [
   { id: "overview", label: "Overview", icon: "◫" },
   { id: "services", label: "Service requests", icon: "▤" },
+  { id: "tasks", label: "Team tasks", icon: "✓" },
   { id: "reports", label: "Reports", icon: "▥" },
   { id: "settings", label: "Settings", icon: "⚙" },
 ];
@@ -68,13 +158,29 @@ function RequestTable({ requests, onView }: { requests: ServiceRequest[]; onView
 }
 
 export function App() {
+  const [sessionData] = useState(readDemoSession);
+  const [demoSession, setDemoSession] = useState(sessionData.user);
   const [view, setView] = useState<View>("overview");
-  const [requests, setRequests] = useState(initialRequests);
+  const [requestData] = useState(readRequests);
+  const [requests, setRequests] = useState(requestData.requests);
+  const [requestStorageError, setRequestStorageError] = useState(requestData.error);
+  const initialRequestsRef = useRef(requestData.requests);
+  const [taskPreferencesRead] = useState(readTaskPreferences);
+  const [taskPreferences, setTaskPreferences] = useState(taskPreferencesRead.preferences);
+  const [preferenceError, setPreferenceError] = useState(taskPreferencesRead.error);
+  const initialTaskPreferences = useRef(taskPreferences);
+  const [tasks, setTasks] = useState<ServiceTask[]>([]);
+  const [taskLoadState, setTaskLoadState] = useState<"loading" | "loaded" | "error">("loading");
+  const [tasksError, setTasksError] = useState("");
+  const [taskReloadKey, setTaskReloadKey] = useState(0);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All statuses");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingRequest, setEditingRequest] = useState<ServiceRequest | null>(null);
   const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState(false);
   const [announcement, setAnnouncement] = useState("");
+  const [authError, setAuthError] = useState(sessionData.error);
   const [apiStatus, setApiStatus] = useState<ApiStatus>("checking");
   const [apiError, setApiError] = useState("");
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -96,6 +202,61 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (taskPreferences === initialTaskPreferences.current) return;
+    try {
+      localStorage.setItem(taskPreferencesKey, JSON.stringify(taskPreferences));
+      setPreferenceError("");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Browser storage is unavailable.";
+      setPreferenceError(`Task preferences could not be saved: ${message}`);
+    }
+  }, [taskPreferences]);
+
+  useEffect(() => {
+    if (requests === initialRequestsRef.current) return;
+    try {
+      localStorage.setItem(requestStorageKey, JSON.stringify(requests));
+      setRequestStorageError("");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Browser storage is unavailable.";
+      setRequestStorageError(`Request changes could not be saved: ${message}`);
+    }
+  }, [requests]);
+
+  useEffect(() => {
+    if (!demoSession) return;
+    try {
+      localStorage.setItem(sessionStorageKey, JSON.stringify(demoSession));
+      setAuthError("");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Browser storage is unavailable.";
+      setAuthError(`Your demo session could not be saved: ${message}`);
+    }
+  }, [demoSession]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setTaskLoadState("loading");
+    setTasksError("");
+
+    async function loadTasks() {
+      try {
+        const result = await fetchServiceTasks(controller.signal);
+        if (controller.signal.aborted) return;
+        setTasks(result);
+        setTaskLoadState("loaded");
+      } catch (error: unknown) {
+        if (controller.signal.aborted) return;
+        setTasksError(error instanceof Error ? error.message : "An unexpected network error occurred.");
+        setTaskLoadState("error");
+      }
+    }
+
+    void loadTasks();
+    return () => controller.abort();
+  }, [taskReloadKey]);
+
+  useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
     if (dialogOpen && !dialog.open) dialog.showModal();
@@ -115,33 +276,131 @@ export function App() {
     return matchesQuery && matchesStatus;
   }), [query, requests, statusFilter]);
 
+  const filteredTasks = useMemo(() => tasks
+    .filter((task) => {
+      const matchesCategory = taskPreferences.category === "all"
+        || (taskPreferences.category === "completed" ? task.completed : !task.completed);
+      const matchesQuery = `${task.title} ${task.assignee}`.toLowerCase().includes(taskPreferences.query.toLowerCase());
+      return matchesCategory && matchesQuery;
+    })
+    .sort((first, second) => {
+      if (taskPreferences.sort === "status") return Number(first.completed) - Number(second.completed);
+      const firstValue = taskPreferences.sort === "assignee" ? first.assignee : first.title;
+      const secondValue = taskPreferences.sort === "assignee" ? second.assignee : second.title;
+      return firstValue.localeCompare(secondValue);
+    }), [taskPreferences, tasks]);
+
   const navigate = (next: View) => {
     setView(next);
     setQuery("");
     setStatusFilter("All statuses");
   };
 
-  const addRequest = (event: FormEvent<HTMLFormElement>) => {
+  const saveRequest = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
     if (!form.reportValidity()) return;
     const data = new FormData(form);
-    const name = String(data.get("resident")).trim();
+    const resident = String(data.get("resident")).trim();
     const service = String(data.get("service"));
-    const request: ServiceRequest = {
-      id: `SR-${2049 + requests.length - initialRequests.length}`,
-      resident: name,
-      service,
-      submitted: new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date()),
-      status: "In review",
-    };
-    setRequests((current) => [request, ...current]);
-    setAnnouncement(`Request ${request.id} for ${name} was created.`);
+    const statusValue = String(data.get("status"));
+    if (!isRequestStatus(statusValue)) {
+      setAnnouncement("Choose a valid request status before saving.");
+      return;
+    }
+    const notes = String(data.get("notes")).trim();
+    if (editingRequest) {
+      const updatedRequest = { ...editingRequest, resident, service, status: statusValue, notes };
+      setRequests((current) => current.map((request) => request.id === editingRequest.id ? updatedRequest : request));
+      setAnnouncement(`Request ${editingRequest.id} was updated.`);
+    } else {
+      const nextId = Math.max(2048, ...requests.map((request) => Number(request.id.replace(/^SR-/, "")) || 0)) + 1;
+      const request: ServiceRequest = {
+        id: `SR-${nextId}`,
+        resident,
+        service,
+        submitted: new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date()),
+        status: statusValue,
+        notes,
+      };
+      setRequests((current) => [request, ...current]);
+      setAnnouncement(`Request ${request.id} for ${resident} was created.`);
+    }
     setDialogOpen(false);
-    form.reset();
+    setEditingRequest(null);
+  };
+
+  const beginCreate = () => {
+    setEditingRequest(null);
+    setDialogOpen(true);
+  };
+
+  const beginEdit = () => {
+    if (!selectedRequest) return;
+    setEditingRequest(selectedRequest);
+    setSelectedRequest(null);
+    setDeleteConfirmation(false);
+    setDialogOpen(true);
+  };
+
+  const deleteSelectedRequest = () => {
+    if (!selectedRequest) return;
+    setRequests((current) => current.filter((request) => request.id !== selectedRequest.id));
+    setAnnouncement(`Request ${selectedRequest.id} was deleted.`);
+    setSelectedRequest(null);
+    setDeleteConfirmation(false);
+  };
+
+  const signInToDemo = () => {
+    setDemoSession(demoUser);
+    setAuthError("");
+  };
+
+  const signOutOfDemo = () => {
+    try {
+      localStorage.removeItem(sessionStorageKey);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Browser storage is unavailable.";
+      setAuthError(`Your demo session could not be cleared: ${message}`);
+    }
+    setDemoSession(null);
+    setAnnouncement("You signed out of the demo workspace.");
+  };
+
+  const saveProfile = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!demoSession) return;
+    const data = new FormData(event.currentTarget);
+    const updatedSession = {
+      name: String(data.get("name")).trim(),
+      email: String(data.get("email")).trim(),
+      role: String(data.get("role")).trim(),
+    };
+    if (!updatedSession.name || !updatedSession.email || !updatedSession.role) return;
+    setDemoSession(updatedSession);
+    setAnnouncement("Your demo profile was saved.");
   };
 
   const heading = navigation.find((item) => item.id === view)?.label ?? "Overview";
+
+  if (!demoSession) {
+    return (
+      <main className="sign-in-page">
+        <section className="sign-in-card" aria-labelledby="sign-in-title">
+          <a className="brand sign-in-brand" href="#home" aria-label="CivicDesk">
+            <span className="brand-mark" aria-hidden="true">C</span>
+            <span>Civic<span className="brand-light">Desk</span></span>
+          </a>
+          <p className="eyebrow">PUBLIC SERVICE WORKSPACE</p>
+          <h1 id="sign-in-title">Welcome to CivicDesk</h1>
+          <p className="heading-description">Sign in to explore the interactive service operations demo.</p>
+          {authError && <div className="task-alert" role="alert">{authError}</div>}
+          <button className="button button-primary sign-in-button" type="button" onClick={signInToDemo}>Continue as demo user</button>
+          <p className="sign-in-note">Demo authentication only. No password or real account is required.</p>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -178,9 +437,9 @@ export function App() {
             <a href="#help">Get support <span aria-hidden="true">↗</span></a>
           </div>
           <div className="profile">
-            <span className="avatar" aria-hidden="true">JD</span>
-            <span className="profile-copy"><strong>Jordan Davis</strong><small>Program manager</small></span>
-            <button className="icon-button profile-menu" type="button" aria-label="Open profile menu">···</button>
+            <span className="avatar" aria-hidden="true">{demoSession.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span>
+            <span className="profile-copy"><strong>{demoSession.name}</strong><small>{demoSession.role}</small></span>
+            <button className="icon-button profile-menu" type="button" onClick={signOutOfDemo} aria-label="Sign out of demo workspace">↪</button>
           </div>
         </div>
       </aside>
@@ -199,12 +458,13 @@ export function App() {
               <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>
               <span className="notification-dot" />
             </button>
-            <button className="top-avatar" type="button" aria-label="Account for Jordan Davis">JD</button>
+            <button className="top-avatar" type="button" onClick={signOutOfDemo} aria-label={`Sign out ${demoSession.name}`}>{demoSession.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</button>
           </div>
         </header>
 
         <main id="main" className="content" tabIndex={-1}>
           <div className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</div>
+          {requestStorageError && <div className="task-alert" role="alert">{requestStorageError}</div>}
           {view === "overview" && (
             <>
               <section className="page-heading" aria-labelledby="page-title">
@@ -213,7 +473,7 @@ export function App() {
                   <h1 id="page-title">Good morning, Jordan <span aria-hidden="true">✦</span></h1>
                   <p className="heading-description">Here’s what’s happening across your services today.</p>
                 </div>
-                <button className="button button-primary" type="button" onClick={() => setDialogOpen(true)}><span aria-hidden="true">＋</span> New request</button>
+                <button className="button button-primary" type="button" onClick={beginCreate}><span aria-hidden="true">＋</span> New request</button>
               </section>
 
               <section aria-labelledby="snapshot-heading">
@@ -294,7 +554,7 @@ export function App() {
             <section aria-labelledby="page-title">
               <div className="page-heading">
                 <div><p className="eyebrow">WORKSPACE / REQUESTS</p><h1 id="page-title">Service requests</h1><p className="heading-description">Review, search, and manage resident requests.</p></div>
-                <button className="button button-primary" type="button" onClick={() => setDialogOpen(true)}><span aria-hidden="true">＋</span> New request</button>
+                <button className="button button-primary" type="button" onClick={beginCreate}><span aria-hidden="true">＋</span> New request</button>
               </div>
               <div className="metric-grid compact-metrics">
                 <article className="metric-card"><p className="metric-label">All requests</p><p className="metric-value">{requests.length.toLocaleString()}</p><p className="metric-note">Across all services</p></article>
@@ -313,6 +573,69 @@ export function App() {
             </section>
           )}
 
+          {view === "tasks" && (
+            <section aria-labelledby="page-title">
+              <div className="page-heading">
+                <div><p className="eyebrow">WORKSPACE / OPERATIONS</p><h1 id="page-title">Team tasks</h1><p className="heading-description">Track your team’s work, powered by live task data.</p></div>
+                <span className={`task-connection ${taskLoadState}`} role="status">
+                  <span aria-hidden="true" />
+                  {taskLoadState === "loading" ? "Loading tasks" : taskLoadState === "error" ? "Tasks unavailable" : `${tasks.length} tasks loaded`}
+                </span>
+              </div>
+              {preferenceError && <div className="task-alert" role="alert">{preferenceError}</div>}
+              {taskLoadState === "error" && (
+                <div className="task-alert" role="alert">
+                  <span>We couldn’t load the team tasks. {tasksError}</span>
+                  <button className="button button-secondary" type="button" onClick={() => setTaskReloadKey((key) => key + 1)}>Try again</button>
+                </div>
+              )}
+              <section className="panel tasks-panel" aria-labelledby="tasks-heading">
+                <div className="panel-heading">
+                  <div><h2 id="tasks-heading">Task board</h2><p>{taskLoadState === "loaded" ? `${filteredTasks.length} matching tasks` : "Tasks from the public task service"}</p></div>
+                </div>
+                <div className="task-toolbar">
+                  <label className="search-field task-search">
+                    <span className="sr-only">Search tasks by title or assignee</span>
+                    <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg>
+                    <input type="search" value={taskPreferences.query} onChange={(event) => setTaskPreferences((current) => ({ ...current, query: event.target.value }))} placeholder="Search tasks or assignees..." />
+                  </label>
+                  <label className="select-field task-sort"><span className="sr-only">Sort tasks</span>
+                    <select value={taskPreferences.sort} onChange={(event) => { const sort = event.target.value; if (isTaskSort(sort)) setTaskPreferences((current) => ({ ...current, sort })); }}>
+                      <option value="title">Sort: task name</option><option value="assignee">Sort: assignee</option><option value="status">Sort: status</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="task-tabs" role="group" aria-label="Filter tasks by status">
+                  {([
+                    ["all", "All tasks"],
+                    ["open", "Open"],
+                    ["completed", "Completed"],
+                  ] as const).map(([category, label]) => (
+                    <button key={category} className={`task-tab ${taskPreferences.category === category ? "is-active" : ""}`} type="button" aria-pressed={taskPreferences.category === category} onClick={() => setTaskPreferences((current) => ({ ...current, category }))}>{label}</button>
+                  ))}
+                </div>
+                {taskLoadState === "loading" ? (
+                  <div className="task-list task-skeletons" role="status" aria-label="Loading tasks">
+                    {Array.from({ length: 5 }, (_, index) => <div className="task-skeleton" key={index}><span /><span /><span /></div>)}
+                  </div>
+                ) : taskLoadState === "loaded" && (
+                  filteredTasks.length > 0 ? (
+                    <ul className="task-list" id="tasks-list">
+                      {filteredTasks.map((task) => (
+                        <li className="task-item" key={task.id}>
+                          <span className={`task-state ${task.completed ? "is-complete" : ""}`} aria-hidden="true">{task.completed ? "✓" : "○"}</span>
+                          <div className="task-copy"><h3>{task.title}</h3><p>Assigned to {task.assignee} <span aria-hidden="true">·</span> Task #{task.id}</p></div>
+                          <span className={`task-status ${task.completed ? "is-complete" : ""}`}>{task.completed ? "Completed" : "Open"}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : <p className="task-empty" role="status">No tasks match these filters. Try another search or status.</p>
+                )}
+              </section>
+              <p className="task-source">Live demo data from <a href="https://jsonplaceholder.typicode.com/" target="_blank" rel="noreferrer">JSONPlaceholder</a>. Search, filters, and sort order are saved in this browser.</p>
+            </section>
+          )}
+
           {view === "reports" && (
             <section aria-labelledby="page-title">
               <div className="page-heading"><div><p className="eyebrow">WORKSPACE / INSIGHTS</p><h1 id="page-title">Reports</h1><p className="heading-description">Understand how residents use your services.</p></div><button className="button button-secondary" type="button" onClick={() => setAnnouncement("Report export is not configured in this demo.")}><span aria-hidden="true">↓</span> <span>Export report</span></button></div>
@@ -328,7 +651,7 @@ export function App() {
           {view === "settings" && (
             <section aria-labelledby="page-title">
               <div className="page-heading"><div><p className="eyebrow">WORKSPACE / PREFERENCES</p><h1 id="page-title">Settings</h1><p className="heading-description">Manage your workspace preferences and notifications.</p></div><button className="button button-primary" type="submit" form="profile-settings-form">Save changes</button></div>
-              <section className="panel settings-panel" aria-labelledby="profile-heading"><div className="panel-heading"><div><h2 id="profile-heading">Profile information</h2><p>Update the details associated with your account.</p></div></div><form id="profile-settings-form" className="settings-form" onSubmit={(event) => { event.preventDefault(); setAnnouncement("Your profile has been saved for this session."); }}><div className="form-row"><label htmlFor="profile-name">Full name</label><input id="profile-name" defaultValue="Jordan Davis" autoComplete="name" /></div><div className="form-row"><label htmlFor="profile-email">Work email</label><input id="profile-email" type="email" defaultValue="jordan.davis@civicdesk.gov" autoComplete="email" /></div><div className="form-row"><label htmlFor="profile-role">Role</label><input id="profile-role" defaultValue="Program manager" /></div><button className="button button-primary" type="submit">Save profile</button></form></section>
+              <section className="panel settings-panel" aria-labelledby="profile-heading"><div className="panel-heading"><div><h2 id="profile-heading">Profile information</h2><p>Update the details associated with your demo account.</p></div></div><form id="profile-settings-form" className="settings-form" onSubmit={saveProfile}><div className="form-row"><label htmlFor="profile-name">Full name</label><input id="profile-name" name="name" defaultValue={demoSession.name} autoComplete="name" required maxLength={80} /></div><div className="form-row"><label htmlFor="profile-email">Work email</label><input id="profile-email" name="email" type="email" defaultValue={demoSession.email} autoComplete="email" required maxLength={120} /></div><div className="form-row"><label htmlFor="profile-role">Role</label><input id="profile-role" name="role" defaultValue={demoSession.role} required maxLength={80} /></div><button className="button button-primary" type="submit">Save profile</button></form><button className="button button-secondary sign-out-button" type="button" onClick={signOutOfDemo}>Sign out</button></section>
               <section className="panel settings-panel notification-settings" aria-labelledby="notification-heading"><div className="panel-heading"><div><h2 id="notification-heading">Notifications</h2><p>Choose which updates you receive.</p></div></div><fieldset className="preference-list"><legend className="sr-only">Notification preferences</legend><label><span><strong>Request updates</strong><small>Get notified when a request needs your attention.</small></span><input type="checkbox" defaultChecked /></label><label><span><strong>Weekly summary</strong><small>Receive a weekly overview of service performance.</small></span><input type="checkbox" defaultChecked /></label><label><span><strong>Product announcements</strong><small>Hear about new features and improvements.</small></span><input type="checkbox" /></label></fieldset></section>
             </section>
           )}
@@ -336,32 +659,41 @@ export function App() {
         </main>
       </div>
 
-      <dialog ref={dialogRef} className="request-dialog" aria-labelledby="dialog-title" onClose={() => setDialogOpen(false)} onCancel={() => setDialogOpen(false)}>
-        <form onSubmit={addRequest}>
-          <div className="dialog-heading"><div><p className="eyebrow">SERVICE REQUEST</p><h2 id="dialog-title">Create a request</h2><p>Add a new resident request to your workspace.</p></div><button className="icon-button close-dialog" type="button" aria-label="Close dialog" onClick={() => setDialogOpen(false)}>×</button></div>
+      <dialog ref={dialogRef} key={editingRequest?.id ?? "new-request"} className="request-dialog" aria-labelledby="dialog-title" onClose={() => { setDialogOpen(false); setEditingRequest(null); }} onCancel={() => { setDialogOpen(false); setEditingRequest(null); }}>
+        <form onSubmit={saveRequest}>
+          <div className="dialog-heading"><div><p className="eyebrow">SERVICE REQUEST</p><h2 id="dialog-title">{editingRequest ? "Edit request" : "Create a request"}</h2><p>{editingRequest ? "Update this request in your workspace." : "Add a new resident request to your workspace."}</p></div><button className="icon-button close-dialog" type="button" aria-label="Close dialog" onClick={() => setDialogOpen(false)}>×</button></div>
           <fieldset className="dialog-fields"><legend className="sr-only">Request details</legend>
             <label htmlFor="resident-name">Resident name <span aria-hidden="true">*</span></label>
-            <input id="resident-name" name="resident" autoComplete="name" required minLength={2} maxLength={80} placeholder="Enter resident’s full name" />
+            <input id="resident-name" name="resident" autoComplete="name" required minLength={2} maxLength={80} defaultValue={editingRequest?.resident ?? ""} placeholder="Enter resident’s full name" />
             <label htmlFor="service-name">Service <span aria-hidden="true">*</span></label>
-            <select id="service-name" name="service" required defaultValue=""><option value="" disabled>Select a service</option><option>Housing assistance</option><option>Business license</option><option>Food support</option><option>Child care subsidy</option></select>
+            <select id="service-name" name="service" required defaultValue={editingRequest?.service ?? ""}><option value="" disabled>Select a service</option><option>Housing assistance</option><option>Business license</option><option>Food support</option><option>Child care subsidy</option></select>
+            <label htmlFor="request-status">Status <span aria-hidden="true">*</span></label>
+            <select id="request-status" name="status" required defaultValue={editingRequest?.status ?? "In review"}><option>In review</option><option>Needs attention</option><option>Completed</option></select>
             <label htmlFor="request-notes">Notes <span className="optional-label">(optional)</span></label>
-            <textarea id="request-notes" name="notes" rows={3} maxLength={500} placeholder="Add details to help your team..." />
+            <textarea id="request-notes" name="notes" rows={3} maxLength={500} defaultValue={editingRequest?.notes ?? ""} placeholder="Add details to help your team..." />
           </fieldset>
           <p className="required-note"><span aria-hidden="true">*</span> Required fields</p>
-          <div className="dialog-actions"><button className="button button-secondary" type="button" onClick={() => setDialogOpen(false)}>Cancel</button><button className="button button-primary" type="submit">Create request</button></div>
+          <div className="dialog-actions"><button className="button button-secondary" type="button" onClick={() => setDialogOpen(false)}>Cancel</button><button className="button button-primary" type="submit">{editingRequest ? "Save changes" : "Create request"}</button></div>
         </form>
       </dialog>
-      <dialog ref={detailsDialogRef} className="request-dialog details-dialog" aria-labelledby="details-title" onClose={() => setSelectedRequest(null)} onCancel={() => setSelectedRequest(null)}>
+      <dialog ref={detailsDialogRef} className="request-dialog details-dialog" aria-labelledby="details-title" onClose={() => { setSelectedRequest(null); setDeleteConfirmation(false); }} onCancel={() => { setSelectedRequest(null); setDeleteConfirmation(false); }}>
         {selectedRequest && (
           <div>
-            <div className="dialog-heading"><div><p className="eyebrow">REQUEST DETAILS</p><h2 id="details-title">{selectedRequest.id}</h2><p>Submitted {selectedRequest.submitted}</p></div><button className="icon-button close-dialog" type="button" aria-label="Close request details" onClick={() => setSelectedRequest(null)}>×</button></div>
-            <dl className="request-details">
-              <div><dt>Resident</dt><dd>{selectedRequest.resident}</dd></div>
-              <div><dt>Service</dt><dd>{selectedRequest.service}</dd></div>
-              <div><dt>Status</dt><dd><StatusBadge status={selectedRequest.status} /></dd></div>
-              <div><dt>Date submitted</dt><dd>{selectedRequest.submitted}</dd></div>
-            </dl>
-            <div className="dialog-actions"><button className="button button-secondary" type="button" onClick={() => setSelectedRequest(null)}>Close</button></div>
+            <div className="dialog-heading"><div><p className="eyebrow">REQUEST DETAILS</p><h2 id="details-title">{selectedRequest.id}</h2><p>Submitted {selectedRequest.submitted}</p></div><button className="icon-button close-dialog" type="button" aria-label="Close request details" onClick={() => { setSelectedRequest(null); setDeleteConfirmation(false); }}>×</button></div>
+            {deleteConfirmation ? (
+              <div className="delete-confirmation" role="alert"><p>Delete request {selectedRequest.id}? This action cannot be undone.</p><div className="dialog-actions"><button className="button button-secondary" type="button" onClick={() => setDeleteConfirmation(false)}>Keep request</button><button className="button button-danger" type="button" onClick={deleteSelectedRequest}>Delete request</button></div></div>
+            ) : (
+              <>
+                <dl className="request-details">
+                  <div><dt>Resident</dt><dd>{selectedRequest.resident}</dd></div>
+                  <div><dt>Service</dt><dd>{selectedRequest.service}</dd></div>
+                  <div><dt>Status</dt><dd><StatusBadge status={selectedRequest.status} /></dd></div>
+                  <div><dt>Date submitted</dt><dd>{selectedRequest.submitted}</dd></div>
+                  <div><dt>Notes</dt><dd>{selectedRequest.notes || "No notes"}</dd></div>
+                </dl>
+                <div className="dialog-actions"><button className="button button-danger" type="button" onClick={() => setDeleteConfirmation(true)}>Delete</button><button className="button button-secondary" type="button" onClick={() => setSelectedRequest(null)}>Close</button><button className="button button-primary" type="button" onClick={beginEdit}>Edit request</button></div>
+              </>
+            )}
           </div>
         )}
       </dialog>

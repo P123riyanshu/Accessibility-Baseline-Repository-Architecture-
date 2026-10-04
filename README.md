@@ -1,32 +1,50 @@
-# Accessible public-service platform
+# CivicDesk — public-service operations capstone
 
-A TypeScript monorepo foundation for an accessible public-service web
-application. The client includes a responsive CivicDesk operations dashboard
-with searchable service requests, request details and creation dialogs, reports,
-and workspace settings. Dashboard records are illustrative local data; the
-server currently exposes a health check to verify the client connection.
+A responsive, accessible SaaS-style workspace for managing public service
+requests. CivicDesk demonstrates a sign-in flow, editable resident request
+records, live team tasks, browser-persisted preferences, reports, and a
+mobile-friendly operations dashboard.
 
 ## Architecture
 
-```text
-client/                 React + Vite user interface
-server/                 Express HTTP boundary and domain logic
-docs/                   Architecture and accessibility audit
-tests/                  Cross-boundary and integration tests
-screenshots/             Audit evidence captured from California DMV
+```mermaid
+flowchart LR
+  U[User] --> C[React + TypeScript client]
+  C --> LS[(Browser localStorage)]
+  C --> API[JSONPlaceholder REST API]
+  C --> H[/api/health]
+  H --> NF[Netlify Function]
+  C -. local development .-> E[Express health endpoint]
 ```
 
-- **Client:** owns presentation, keyboard interaction, accessible form states,
-  and HTTP calls. It does not own business rules or persistence.
-- **Server:** owns API contracts, input validation, domain rules, and
-  persistence adapters. The client reaches it through `/api`.
-- **Docs:** records decisions, setup, and the external-site audit separately
-  from application behavior.
-- **Tests:** keeps API and end-to-end coverage at the boundaries where user
-  workflows cross packages.
+- **Client (`client/src/`):** React/TypeScript UI, async API client, responsive
+  styles, accessible forms, request CRUD, search/filtering, and sort controls.
+- **Demo data:** requests, the signed-in demo profile, and task-board
+  preferences are stored in this browser's `localStorage`. Request changes are
+  isolated to the current browser and are not shared with other users.
+- **External API:** the team task board reads sample todos and assignees from
+  JSONPlaceholder. It includes loading, error, and retry states.
+- **Health check:** local development uses the Express server; Netlify uses the
+  small function in `netlify/functions/`.
+- **Tests and audit:** `tests/` contains server API tests; `docs/` and
+  `screenshots/` contain accessibility audit material.
 
-The server exposes `GET /api/health`. The dashboard displays the API connection
-state to verify local setup and the Vite proxy.
+The sign-in is intentionally simulated for a portfolio demo. It does not
+authenticate identities, protect private data, or replace a production identity
+provider. Do not enter real resident information; browser storage is not a
+production database.
+
+## Features
+
+- Demo sign-in and sign-out with a locally persisted profile.
+- Create, view, edit, update status, and delete service requests.
+- Search requests and filter by status; request changes survive reloads in the
+  same browser.
+- Load team tasks asynchronously; search by title or assignee, filter by
+  completion, and sort by title, assignee, or status.
+- Persist task-board preferences and show actionable storage/API errors.
+- Responsive layouts, keyboard-accessible dialogs, focus indicators, reduced
+  motion support, and light/dark color schemes.
 
 ## Responsive design
 
@@ -75,23 +93,35 @@ npm run build
 The client and server each have their own workspace scripts. The root scripts
 run them across the workspace.
 
-## First product vertical slice
+## Deploy to Netlify
 
-Implement a **service directory search** from UI through persistence:
+The repository includes [`netlify.toml`](./netlify.toml) for a static Vite
+build, a health-check function, and a single-page-app fallback. To publish:
 
-1. Add an explicitly labelled search form with loading, result, empty, and error
-   states in the client. Support submit by keyboard and keep focus predictable.
-2. Add `GET /api/services?q=...`; validate and normalize the query at the
-   server boundary.
-3. Put search behavior in a server domain/service module and read records
-   through a repository interface (start with an in-memory adapter).
-4. Return a stable response contract and render result links with meaningful
-   names, not repeated “Learn more” labels.
-5. Cover query validation and repository behavior with unit tests, the route
-   with an integration test, and the full search workflow with keyboard tests.
+1. Push this repository to GitHub.
+2. In Netlify, choose **Add new site → Import an existing project** and connect
+   the GitHub repository.
+3. Keep the detected build settings from `netlify.toml`, deploy, then confirm
+   the site URL and `/api/health` endpoint in the Netlify dashboard.
+4. Add the resulting public URL here before submitting the capstone.
 
-Keep the HTTP contract independent of React and the repository implementation
-independent of Express so either can evolve without changing the other.
+Netlify runs `npm run build --workspace @service/client` on Node.js 20 and
+publishes `client/dist`. Deploying the frontend does not turn the simulated
+sign-in or browser-only request storage into shared production services.
+
+- Source repository: [P123riyanshu/Accessibility-Baseline-Repository-Architecture-](https://github.com/P123riyanshu/Accessibility-Baseline-Repository-Architecture-)
+- Live deployment: pending Netlify site creation and deploy.
+
+## Repository layout
+
+```text
+client/                 React + Vite user interface
+server/                 Express health-check API for local development
+netlify/functions/      Netlify health-check function
+docs/                   Accessibility audit
+tests/                  Server API integration tests
+screenshots/             Responsive and accessibility audit evidence
+```
 
 ## Audit evidence
 
