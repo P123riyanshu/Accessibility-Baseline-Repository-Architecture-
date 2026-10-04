@@ -28,6 +28,24 @@ screenshots/             Audit evidence captured from California DMV
 The server exposes `GET /api/health`. The dashboard displays the API connection
 state to verify local setup and the Vite proxy.
 
+## Responsive design
+
+The dashboard stylesheet is `client/src/style.css`. Its `:root` tokens define
+the brand palette, type scale, spacing, radii, surfaces, and shadows. Layout
+rules are mobile-first, with breakpoints at 320px, 768px, 1024px, and 1440px.
+The request table keeps its minimum readable width inside its own horizontal
+scroll region so it does not expand the page on narrow screens.
+
+Light and dark palettes follow `prefers-color-scheme`; set
+`data-theme="light"` or `data-theme="dark"` on `<html>` to explicitly choose a
+theme. Browser-rendered responsive previews:
+
+- [320px](./screenshots/civicdesk-responsive-320.png)
+- [768px](./screenshots/civicdesk-responsive-768.png)
+- [1024px](./screenshots/civicdesk-responsive-1024.png)
+- [1440px](./screenshots/civicdesk-responsive-1440.png)
+- [Dark theme at 1024px](./screenshots/civicdesk-responsive-dark-1024.png)
+
 ## Local setup
 
 Requires Node.js 20 or newer and npm.
