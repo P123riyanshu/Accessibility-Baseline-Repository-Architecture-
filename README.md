@@ -96,21 +96,15 @@ run them across the workspace.
 ## Deploy to Netlify
 
 The repository includes [`netlify.toml`](./netlify.toml) for a static Vite
-build, a health-check function, and a single-page-app fallback. To publish:
-
-1. Push this repository to GitHub.
-2. In Netlify, choose **Add new site → Import an existing project** and connect
-   the GitHub repository.
-3. Keep the detected build settings from `netlify.toml`, deploy, then confirm
-   the site URL and `/api/health` endpoint in the Netlify dashboard.
-4. Add the resulting public URL here before submitting the capstone.
+build, a health-check function, and a single-page-app fallback.
 
 Netlify runs `npm run build --workspace @service/client` on Node.js 20 and
 publishes `client/dist`. Deploying the frontend does not turn the simulated
 sign-in or browser-only request storage into shared production services.
 
 - Source repository: [P123riyanshu/Accessibility-Baseline-Repository-Architecture-](https://github.com/P123riyanshu/Accessibility-Baseline-Repository-Architecture-)
-- Live deployment: pending Netlify site creation and deploy.
+- Live deployment: [CivicDesk on Netlify](https://enchanting-palmier-8f4985.netlify.app/)
+- Health check: [Production API status](https://enchanting-palmier-8f4985.netlify.app/api/health)
 
 ## Repository layout
 
